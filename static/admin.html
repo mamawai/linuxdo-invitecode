@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>管理后台 - LinuxDo 邀请码</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600&family=Playfair+Display:wght@600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #faf8f5;
+            --surface: #ffffff;
+            --border: #e8e2d9;
+            --text: #2c2416;
+            --text-secondary: #7a7060;
+            --text-muted: #b0a898;
+            --accent: #d4622a;
+            --accent-light: #fdf0e9;
+            --success: #4a8c5e;
+            --success-bg: #eef5f0;
+            --error: #c0392b;
+            --error-bg: #fdf0ee;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg); color: var(--text);
+            min-height: 100vh; display: flex; align-items: flex-start; justify-content: center;
+            padding: 40px 24px;
+        }
+        .container { width: 100%; max-width: 720px; }
+        .card {
+            background: var(--surface); border: 1px solid var(--border);
+            border-radius: 16px; padding: 36px 32px;
+            box-shadow: 0 1px 3px rgba(44,36,22,0.04), 0 8px 24px rgba(44,36,22,0.06);
+            margin-bottom: 20px;
+        }
+        .header { text-align: center; margin-bottom: 28px; }
+        .logo {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 44px; height: 44px; background: var(--accent); border-radius: 10px;
+            margin-bottom: 14px; color: white; font-family: 'Playfair Display', serif;
+            font-size: 22px; font-weight: 600;
+        }
+        .title { font-family: 'Playfair Display', serif; font-size: 24px; font-weight: 600; margin-bottom: 4px; }
+        .subtitle { font-size: 13px; color: var(--text-secondary); }
+        .section-title {
+            font-size: 11px; font-weight: 600; color: var(--text-muted);
+            text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px;
+        }
+        .textarea {
+            width: 100%; padding: 12px 14px; background: var(--surface);
+            border: 1px solid var(--border); border-radius: 10px;
+            color: var(--text); font-family: inherit; font-size: 14px;
+            resize: vertical; min-height: 80px;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-light); }
+        .textarea::placeholder { color: var(--text-muted); }
+        .btn {
+            padding: 11px 24px; background: var(--accent); border: none; border-radius: 10px;
+            color: white; font-family: inherit; font-size: 14px; font-weight: 500;
+            cursor: pointer; transition: all 0.2s; margin-top: 10px;
+        }
+        .btn:hover:not(:disabled) { background: #bf5825; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(212,98,42,0.25); }
+        .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+        .btn-loading { position: relative; color: transparent; }
+        .btn-loading::after {
+            content: ''; position: absolute; top: 50%; left: 50%;
+            width: 16px; height: 16px; margin: -8px 0 0 -8px;
+            border: 2px solid rgba(255,255,255,0.35); border-top-color: white;
+            border-radius: 50%; animation: spin 0.7s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .message {
+            padding: 10px 14px; border-radius: 8px; font-size: 13px;
+            margin-top: 12px; display: none; animation: fadeIn 0.25s ease;
+        }
+        .message.show { display: block; }
+        .message.success { background: var(--success-bg); border: 1px solid rgba(74,140,94,0.2); color: var(--success); }
+        .message.error { background: var(--error-bg); border: 1px solid rgba(192,57,43,0.15); color: var(--error); }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* 表格 */
+        .table-wrap { overflow-x: auto; margin-top: 12px; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th, td { padding: 9px 10px; text-align: left; border-bottom: 1px solid var(--border); }
+        th { color: var(--text-muted); font-weight: 500; font-size: 12px; white-space: nowrap; }
+        td { color: var(--text-secondary); word-break: break-all; }
+        .s-available { color: var(--success); font-weight: 500; }
+        .s-pending { color: var(--accent); font-weight: 500; }
+        .s-claimed { color: var(--text-muted); }
+        .empty { text-align: center; color: var(--text-muted); font-size: 13px; padding: 20px 0; }
+
+        /* 分页 */
+        .pager { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 16px; font-size: 13px; color: var(--text-secondary); }
+        .pager button {
+            padding: 6px 14px; border: 1px solid var(--border); border-radius: 6px;
+            background: var(--surface); color: var(--text-secondary); font-size: 13px;
+            cursor: pointer; transition: all 0.15s;
+        }
+        .pager button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+        .pager button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+        .back-link { font-size: 13px; color: var(--text-muted); text-decoration: underline; text-underline-offset: 3px; }
+        .back-link:hover { color: var(--accent); }
+
+        @media (max-width: 520px) {
+            body { padding: 20px 12px; }
+            .card { padding: 24px 18px; border-radius: 12px; }
+            .title { font-size: 20px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- 上传邀请码 -->
+        <div class="card">
+            <div class="header">
+                <div class="logo">L</div>
+                <h1 class="title">管理后台</h1>
+                <p class="subtitle">上传邀请码 · 查看所有邀请码状态</p>
+            </div>
+            <div class="section-title">上传邀请码</div>
+            <textarea class="textarea" id="codesInput" placeholder="每行一个邀请码"></textarea>
+            <button class="btn" id="uploadBtn" onclick="uploadCodes()">上传</button>
+            <div class="message" id="uploadMsg"></div>
+        </div>
+
+        <!-- 邀请码列表 -->
+        <div class="card">
+            <div class="section-title">邀请码列表</div>
+            <button class="btn" onclick="loadCodes(1)">查询</button>
+            <div id="codesContainer"></div>
+        </div>
+
+        <div style="text-align:center;margin-top:8px;">
+            <a class="back-link" href="/">← 返回首页</a>
+        </div>
+    </div>
+
+    <script>
+        const API = '/api/invite';
+        const KEY = sessionStorage.getItem('adminKey');
+        // 未验证则跳回首页
+        if (!KEY) { window.location.href = '/'; }
+
+        let currentPage = 1;
+        const PAGE_SIZE = 20;
+
+        async function uploadCodes() {
+            const btn = document.getElementById('uploadBtn');
+            const raw = document.getElementById('codesInput').value.trim();
+            if (!raw) { showMsg('uploadMsg', 'error', '请输入邀请码'); return; }
+            const codes = raw.split(/\n/).map(s => s.trim()).filter(Boolean);
+            if (!codes.length) { showMsg('uploadMsg', 'error', '没有有效的邀请码'); return; }
+
+            btn.disabled = true; btn.classList.add('btn-loading');
+            try {
+                const res = await fetch(`${API}/upload`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-Admin-Key': KEY },
+                    body: JSON.stringify({ codes })
+                });
+                const data = await res.json();
+                if (data.code === 200) {
+                    showMsg('uploadMsg', 'success', `成功 ${data.data.success} 条，跳过 ${data.data.skip} 条`);
+                    document.getElementById('codesInput').value = '';
+                } else {
+                    showMsg('uploadMsg', 'error', data.message || '上传失败');
+                }
+            } catch (e) {
+                showMsg('uploadMsg', 'error', '网络错误');
+            } finally {
+                btn.disabled = false; btn.classList.remove('btn-loading');
+            }
+        }
+
+        async function loadCodes(page) {
+            currentPage = page;
+            const container = document.getElementById('codesContainer');
+            container.innerHTML = '<div class="empty">加载中...</div>';
+            try {
+                const res = await fetch(`${API}/admin/codes?page=${page}&size=${PAGE_SIZE}`, {
+                    headers: { 'X-Admin-Key': KEY }
+                });
+                const data = await res.json();
+                if (data.code !== 200) {
+                    // 密钥失效则跳回首页
+                    if (data.message === '密钥错误') { sessionStorage.removeItem('adminKey'); window.location.href = '/'; return; }
+                    container.innerHTML = `<div class="empty">${esc(data.message)}</div>`;
+                    return;
+                }
+                const d = data.data;
+                if (!d.list || !d.list.length) {
+                    container.innerHTML = '<div class="empty">暂无邀请码</div>';
+                    return;
+                }
+                const totalPages = Math.ceil(d.total / d.size);
+                const rows = d.list.map(item => {
+                    const cls = item.status === 'available' ? 's-available' : item.status === 'pending' ? 's-pending' : 's-claimed';
+                    const label = item.status === 'available' ? '未领取' : item.status === 'pending' ? '待验证' : '已领取';
+                    const email = item.email || '-';
+                    const claimed = item.claimedAt ? fmtTime(new Date(item.claimedAt)) : '-';
+                    return `<tr><td>${esc(item.code)}</td><td class="${cls}">${label}</td><td>${esc(email)}</td><td>${claimed}</td></tr>`;
+                }).join('');
+
+                container.innerHTML = `
+                    <div class="table-wrap"><table>
+                        <thead><tr><th>邀请码</th><th>状态</th><th>邮箱</th><th>领取时间</th></tr></thead>
+                        <tbody>${rows}</tbody>
+                    </table></div>
+                    <div class="pager">
+                        <button onclick="loadCodes(${page - 1})" ${page <= 1 ? 'disabled' : ''}>上一页</button>
+                        <span>${page} / ${totalPages}（共 ${d.total} 条）</span>
+                        <button onclick="loadCodes(${page + 1})" ${page >= totalPages ? 'disabled' : ''}>下一页</button>
+                    </div>`;
+            } catch (e) {
+                container.innerHTML = '<div class="empty">网络错误</div>';
+            }
+        }
+
+        function showMsg(id, type, text) {
+            const el = document.getElementById(id);
+            el.className = `message ${type} show`;
+            el.textContent = text;
+        }
+
+        function esc(text) {
+            const d = document.createElement('div');
+            d.textContent = text;
+            return d.innerHTML;
+        }
+
+        function fmtTime(date) {
+            const pad = n => String(n).padStart(2, '0');
+            return `${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+        }
+    </script>
+</body>
+</html>

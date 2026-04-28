@@ -32,10 +32,18 @@ type UploadRequest struct {
 }
 
 type InviteLinkVO struct {
-	Code      string    `json:"code"`
-	Status    string    `json:"status"`
-	Email     string    `json:"email,omitempty"`
-	CreatedAt time.Time `json:"createdAt"`
+	Code      string     `json:"code"`
+	Status    string     `json:"status"`
+	Email     string     `json:"email,omitempty"`
+	ClaimedAt *time.Time `json:"claimedAt,omitempty"`
+	CreatedAt time.Time  `json:"createdAt"`
+}
+
+type AdminCodesVO struct {
+	List  []InviteLinkVO `json:"list"`
+	Total int64          `json:"total"`
+	Page  int            `json:"page"`
+	Size  int            `json:"size"`
 }
 
 type Result[T any] struct {

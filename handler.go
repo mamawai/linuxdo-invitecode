@@ -29,6 +29,12 @@ func (h *InviteHandler) Register(r *gin.Engine) {
 		api.GET("/clicks", h.Clicks)
 		api.POST("/upload", h.Upload)
 		api.GET("/links", h.Links)
+
+		admin := api.Group("/admin")
+		{
+			admin.POST("/verify", h.AdminVerify)
+			admin.GET("/codes", h.AdminCodes)
+		}
 	}
 }
 
@@ -115,11 +121,6 @@ func (h *InviteHandler) Upload(c *gin.Context) {
 		return
 	}
 
-	if !h.redis.TokenBucketAllow("limiter:upload:"+adminKey, 1.0/60.0, 5) {
-		c.JSON(http.StatusOK, Fail("请求过于频繁，请稍后再试"))
-		return
-	}
-
 	var req UploadRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusOK, Fail("参数错误: "+err.Error()))
@@ -135,4 +136,32 @@ func (h *InviteHandler) Upload(c *gin.Context) {
 		"success": success,
 		"skip":    skip,
 	}))
+}
+
+// AdminVerify 管理员密钥验证（前端验证通过后跳转管理页面）
+func (h *InviteHandler) AdminVerify(c *gin.Context) {
+	var req struct {
+		Key string `json:"key" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, Fail("请输入密钥"))
+		return
+	}
+	if subtle.ConstantTimeCompare([]byte(req.Key), []byte(h.config.AdminKey)) != 1 {
+		c.JSON(http.StatusOK, Fail("密钥错误"))
+		return
+	}
+	c.JSON(http.StatusOK, OKVoid())
+}
+
+// AdminCodes 管理员分页查询所有邀请码
+func (h *InviteHandler) AdminCodes(c *gin.Context) {
+	adminKey := c.GetHeader("X-Admin-Key")
+	if subtle.ConstantTimeCompare([]byte(adminKey), []byte(h.config.AdminKey)) != 1 {
+		c.JSON(http.StatusOK, Fail("密钥错误"))
+		return
+	}
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	size, _ := strconv.Atoi(c.DefaultQuery("size", "20"))
+	c.JSON(http.StatusOK, OK(h.svc.GetAllCodes(page, size)))
 }

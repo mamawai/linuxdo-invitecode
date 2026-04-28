@@ -239,6 +239,42 @@ func (s *InviteService) GetInviteLinks() []InviteLinkVO {
 	return result
 }
 
+// GetAllCodes 分页查询所有邀请码（管理员用，含已领取）
+func (s *InviteService) GetAllCodes(page, size int) *AdminCodesVO {
+	if page < 1 {
+		page = 1
+	}
+	if size < 1 || size > 100 {
+		size = 20
+	}
+
+	var total int64
+	s.db.Model(&LinuxdoInviteCode{}).Count(&total)
+
+	var codes []LinuxdoInviteCode
+	s.db.Order("id DESC").Offset((page - 1) * size).Limit(size).Find(&codes)
+
+	list := make([]InviteLinkVO, 0, len(codes))
+	for _, c := range codes {
+		vo := InviteLinkVO{Code: c.Code, CreatedAt: c.CreatedAt, ClaimedAt: c.ClaimedAt}
+		switch {
+		case c.Email == nil:
+			vo.Status = "available"
+		case strings.HasPrefix(*c.Email, PendingDBPrefix):
+			// pending 状态，尝试从 Redis 获取真实邮箱
+			vo.Status = "pending"
+			token := strings.TrimPrefix(*c.Email, PendingDBPrefix)
+			vo.Email = s.redis.Get(TOKENKeyPrefix + token)
+		default:
+			vo.Status = "claimed"
+			vo.Email = *c.Email
+		}
+		list = append(list, vo)
+	}
+
+	return &AdminCodesVO{List: list, Total: total, Page: page, Size: size}
+}
+
 // StartPendingReleaseWorker 启动后台轮询，定时释放过期的 pending 邀请码
 func (s *InviteService) StartPendingReleaseWorker() {
 	ticker := time.NewTicker(5 * time.Minute)
@@ -303,6 +339,7 @@ body { margin: 0; padding: 0; background: #faf8f5; font-family: 'Noto Sans SC', 
 </td></tr>
 <tr><td class="card-footer" style="background:#faf8f5;padding:20px 40px;border-top:1px solid #e8e2d9;">
 <p style="margin:0;color:#b0a898;font-size:12px;text-align:center;">mawai · linux.do</p>
+<p style="margin:6px 0 0;font-size:12px;text-align:center;"><a href="https://github.com/mamawai/linuxdo-invitecode" style="color:#b0a898;text-decoration:underline;">GitHub</a> · 如果有帮助，欢迎给个 ⭐ Star</p>
 </td></tr>
 </table>
 </td></tr>
