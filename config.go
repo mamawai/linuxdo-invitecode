@@ -22,6 +22,7 @@ type Config struct {
 	ResendFrom string
 	FrontURL   string
 	AdminKey   string
+	AltchaKey  string
 }
 
 func loadConfig() *Config {
@@ -41,6 +42,7 @@ func loadConfig() *Config {
 		ResendFrom: getEnv("RESEND_FROM_EMAIL", "noreply@mynnmy.top"),
 		FrontURL:   getEnv("FRONT_URL", "http://localhost:7386"),
 		AdminKey:   getEnv("ADMIN_UPLOAD_KEY", ""),
+		AltchaKey:  getEnv("ALTCHA_HMAC_KEY", ""),
 	}
 
 	if cfg.DBPassword == "" {

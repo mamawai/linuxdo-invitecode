@@ -29,6 +29,7 @@ func main() {
 	handler.Register(r)
 	r.StaticFile("/", "./static/index.html")
 	r.StaticFile("/admin", "./static/admin.html")
+	r.StaticFile("/altcha.min.js", "./static/altcha.min.js")
 
 	srv := &http.Server{
 		Addr:    ":" + cfg.Port,

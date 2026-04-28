@@ -4,7 +4,9 @@ import (
 	"crypto/subtle"
 	"net/http"
 	"strconv"
+	"time"
 
+	altcha "github.com/altcha-org/altcha-lib-go"
 	"github.com/gin-gonic/gin"
 )
 
@@ -29,6 +31,7 @@ func (h *InviteHandler) Register(r *gin.Engine) {
 		api.GET("/clicks", h.Clicks)
 		api.POST("/upload", h.Upload)
 		api.GET("/links", h.Links)
+		api.GET("/challenge", h.Challenge)
 
 		admin := api.Group("/admin")
 		{
@@ -36,6 +39,25 @@ func (h *InviteHandler) Register(r *gin.Engine) {
 			admin.GET("/codes", h.AdminCodes)
 		}
 	}
+}
+
+// Challenge 生成 POW challenge（altcha v1 协议）
+func (h *InviteHandler) Challenge(c *gin.Context) {
+	if h.config.AltchaKey == "" {
+		c.JSON(http.StatusOK, Fail("POW 未启用"))
+		return
+	}
+	expires := time.Now().Add(5 * time.Minute)
+	challenge, err := altcha.CreateChallenge(altcha.ChallengeOptions{
+		HMACKey:   h.config.AltchaKey,
+		MaxNumber: 2000000, // 计算时间
+		Expires:   &expires,
+	})
+	if err != nil {
+		c.JSON(http.StatusOK, Fail("生成 challenge 失败"))
+		return
+	}
+	c.JSON(http.StatusOK, challenge)
 }
 
 // Status 库存状态（按 IP 限流：每秒 1 次，容量 1，key 过期 10min）
@@ -54,6 +76,26 @@ func (h *InviteHandler) Apply(c *gin.Context) {
 	if !h.redis.TokenBucketAllow("limiter:invite_apply:"+ip, 6.0/60.0, 6) {
 		c.JSON(http.StatusOK, Fail("请求过于频繁，请稍后再试"))
 		return
+	}
+	// POW 验证：配置了 AltchaKey 时必须通过
+	if h.config.AltchaKey != "" {
+		payload := c.PostForm("altcha")
+		if payload == "" {
+			c.JSON(http.StatusOK, Fail("请完成人机验证"))
+			return
+		}
+		ok, err := altcha.VerifySolution(payload, h.config.AltchaKey, true)
+		if err != nil || !ok {
+			c.JSON(http.StatusOK, Fail("人机验证失败，请刷新重试"))
+			return
+		}
+		// 防重放：同一个 challenge 解只能用一次
+		replayKey := "altcha:used:" + payload[:32]
+		if h.redis.Exists(replayKey) {
+			c.JSON(http.StatusOK, Fail("验证已过期，请刷新重试"))
+			return
+		}
+		_ = h.redis.Set(replayKey, "1", 5*time.Minute)
 	}
 	email := c.PostForm("email")
 	if email == "" {

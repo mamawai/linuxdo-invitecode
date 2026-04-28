@@ -464,6 +464,7 @@
             .logo { width: 46px; height: 46px; font-size: 22px; border-radius: 10px; }
         }
     </style>
+    <script async defer src="/altcha.min.js" type="module"></script>
 </head>
 <body>
     <div class="container">
@@ -483,6 +484,14 @@
                 <div class="form-group">
                     <label class="label">邮箱地址</label>
                     <input type="email" class="input" id="emailInput" placeholder="123456@qq.com" autocomplete="email">
+                </div>
+                <div class="form-group" id="altchaWrap" style="display:none;">
+                    <altcha-widget
+                        challenge="/api/invite/challenge"
+                        auto="off"
+                        hidefooter
+                        hidelogo
+                    ></altcha-widget>
                 </div>
                 <button class="btn" id="submitBtn" disabled>
                     <span id="btnText">申请邀请码</span>
@@ -609,13 +618,31 @@
             if (!email) { showMessage('error', '请输入邮箱地址'); return; }
             if (!/^\d+@qq\.com$/i.test(email)) { showMessage('error', '仅支持数字QQ邮箱（如 123456@qq.com）'); return; }
 
+            // 检查 POW 验证是否完成
+            const widget = document.querySelector('altcha-widget');
+            const altchaInput = widget ? widget.querySelector('input[name="altcha"]') : null;
+            if (widget && (!altchaInput || !altchaInput.value)) {
+                // 显示 widget，提示用户先完成验证
+                document.getElementById('altchaWrap').style.display = '';
+                showMessage('error', '请先完成人机验证');
+                return;
+            }
+
             const btn = document.getElementById('submitBtn');
             const btnText = document.getElementById('btnText');
             btn.disabled = true;
             btn.classList.add('btn-loading');
+            doApply(email);
+        }
 
+        async function doApply(email) {
+            const btn = document.getElementById('submitBtn');
+            const btnText = document.getElementById('btnText');
             try {
                 const form = new URLSearchParams(); form.append('email', email);
+                // 附加 altcha POW payload
+                const altchaInput = document.querySelector('altcha-widget input[name="altcha"]');
+                if (altchaInput && altchaInput.value) { form.append('altcha', altchaInput.value); }
                 const res = await fetch(`${API_BASE}/apply`, { method: 'POST', body: form });
                 const data = await res.json();
                 if (data.code === 200) {
