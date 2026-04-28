@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LinuxDo 邀请码</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600&family=Playfair+Display:wght@600&display=swap" rel="stylesheet">
@@ -562,14 +563,25 @@
             await loadClicks();
         });
 
+        let powEnabled = false; // 后端是否启用 POW 验证
+
         async function checkStatus() {
             try {
                 const res = await fetch(`${API_BASE}/status`);
                 const data = await res.json();
-                if (data.code === 200 && data.data === true) {
-                    document.getElementById('statusDot').className = 'status-dot';
-                    document.getElementById('statusText').textContent = '邀请码充足';
-                    document.getElementById('submitBtn').disabled = false;
+                if (data.code === 200 && data.data) {
+                    powEnabled = !!data.data.powEnabled;
+                    // 仅启用 POW 时显示 altcha widget
+                    if (powEnabled) document.getElementById('altchaWrap').style.display = '';
+                    if (data.data.hasStock) {
+                        document.getElementById('statusDot').className = 'status-dot';
+                        document.getElementById('statusText').textContent = '邀请码充足';
+                        document.getElementById('submitBtn').disabled = false;
+                    } else {
+                        document.getElementById('statusDot').className = 'status-dot offline';
+                        document.getElementById('statusText').textContent = '暂无库存';
+                        document.getElementById('submitBtn').disabled = true;
+                    }
                 } else {
                     document.getElementById('statusDot').className = 'status-dot offline';
                     document.getElementById('statusText').textContent = '暂无库存';
@@ -585,7 +597,11 @@
             document.getElementById('statusText').textContent = '验证中...';
             document.getElementById('applyForm').style.display = 'none';
             try {
-                const res = await fetch(`${API_BASE}/verify?token=${encodeURIComponent(token)}`);
+                const res = await fetch(`${API_BASE}/verify`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ token })
+                });
                 const data = await res.json();
                 if (data.code === 200 && data.data) {
                     // 清除 URL 中的 token 参数，防止刷新重复验证
@@ -618,14 +634,14 @@
             if (!email) { showMessage('error', '请输入邮箱地址'); return; }
             if (!/^\d+@qq\.com$/i.test(email)) { showMessage('error', '仅支持数字QQ邮箱（如 123456@qq.com）'); return; }
 
-            // 检查 POW 验证是否完成
-            const widget = document.querySelector('altcha-widget');
-            const altchaInput = widget ? widget.querySelector('input[name="altcha"]') : null;
-            if (widget && (!altchaInput || !altchaInput.value)) {
-                // 显示 widget，提示用户先完成验证
-                document.getElementById('altchaWrap').style.display = '';
-                showMessage('error', '请先完成人机验证');
-                return;
+            // POW 启用时才校验 altcha
+            if (powEnabled) {
+                const widget = document.querySelector('altcha-widget');
+                const altchaInput = widget ? widget.querySelector('input[name="altcha"]') : null;
+                if (!altchaInput || !altchaInput.value) {
+                    showMessage('error', '请先完成人机验证');
+                    return;
+                }
             }
 
             const btn = document.getElementById('submitBtn');

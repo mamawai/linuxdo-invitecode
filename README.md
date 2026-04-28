@@ -34,7 +34,7 @@ cp example.env .env
 ```sql
 CREATE TABLE IF NOT EXISTS linuxdo_invite_code (
     id         BIGSERIAL PRIMARY KEY,
-    code       VARCHAR(255) NOT NULL,
+    code       VARCHAR(255) NOT NULL UNIQUE,
     email      VARCHAR(255),
     claimed_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT NOW()

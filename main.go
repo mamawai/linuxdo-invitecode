@@ -19,7 +19,8 @@ func main() {
 	redis := initRedis(cfg)
 	email := NewEmailSender(cfg.ResendKey, cfg.ResendFrom)
 	svc := NewInviteService(db, redis, email, cfg)
-	svc.StartPendingReleaseWorker()
+	workerCtx, workerCancel := context.WithCancel(context.Background())
+	svc.StartPendingReleaseWorker(workerCtx)
 
 	handler := NewInviteHandler(svc, redis, cfg)
 
@@ -30,6 +31,7 @@ func main() {
 	r.StaticFile("/", "./static/index.html")
 	r.StaticFile("/admin", "./static/admin.html")
 	r.StaticFile("/altcha.min.js", "./static/altcha.min.js")
+	r.StaticFile("/favicon.svg", "./static/favicon.svg")
 
 	srv := &http.Server{
 		Addr:    ":" + cfg.Port,
@@ -48,6 +50,7 @@ func main() {
 	<-quit
 
 	log.Println("正在关闭服务...")
+	workerCancel()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {

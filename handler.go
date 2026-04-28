@@ -27,7 +27,7 @@ func (h *InviteHandler) Register(r *gin.Engine) {
 	{
 		api.GET("/status", h.Status)
 		api.POST("/apply", h.Apply)
-		api.GET("/verify", h.Verify)
+		api.POST("/verify", h.VerifyPost)
 		api.GET("/records", h.Records)
 		api.POST("/click", h.Click)
 		api.GET("/clicks", h.Clicks)
@@ -67,14 +67,17 @@ func (h *InviteHandler) Challenge(c *gin.Context) {
 	c.JSON(http.StatusOK, challenge)
 }
 
-// Status 库存状态（按 IP 限流：每秒 1 次，容量 1，key 过期 10min）
+// Status 库存+配置状态（前端据此决定是否渲染 altcha）
 func (h *InviteHandler) Status(c *gin.Context) {
 	ip := c.ClientIP()
 	if !h.redis.TokenBucketAllow("limiter:invite_status:"+ip, 30.0/60.0, 30) {
 		c.JSON(http.StatusOK, Fail("请求过于频繁，请稍后再试"))
 		return
 	}
-	c.JSON(http.StatusOK, OK(h.svc.HasStock()))
+	c.JSON(http.StatusOK, OK(map[string]any{
+		"hasStock":   h.svc.HasStock(),
+		"powEnabled": h.config.AltchaKey != "",
+	}))
 }
 
 // Apply 申请邀请码（按 IP 限流：每 10s 1 次，容量 6，key 过期 10min）
@@ -117,14 +120,16 @@ func (h *InviteHandler) Apply(c *gin.Context) {
 	c.JSON(http.StatusOK, OK(true))
 }
 
-// Verify 验证领取
-func (h *InviteHandler) Verify(c *gin.Context) {
-	token := c.Query("token")
-	if token == "" {
+// VerifyPost 验证领取
+func (h *InviteHandler) VerifyPost(c *gin.Context) {
+	var req struct {
+		Token string `json:"token" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusOK, Fail("token 不能为空"))
 		return
 	}
-	code, err := h.svc.Verify(token)
+	code, err := h.svc.Verify(req.Token)
 	if err != nil {
 		c.JSON(http.StatusOK, Fail(err.Error()))
 		return

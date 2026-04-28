@@ -7,7 +7,7 @@ import (
 // LinuxdoInviteCode 兼容原 Java 表结构 linuxdo_invite_code
 type LinuxdoInviteCode struct {
 	ID        uint64     `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
-	Code      string     `gorm:"column:code;not null" json:"code"`
+	Code      string     `gorm:"column:code;not null;uniqueIndex" json:"code"`
 	Email     *string    `gorm:"column:email" json:"email,omitempty"`
 	ClaimedAt *time.Time `gorm:"column:claimed_at" json:"claimed_at,omitempty"`
 	CreatedAt time.Time  `gorm:"column:created_at;autoCreateTime" json:"created_at"`

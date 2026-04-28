@@ -6,15 +6,21 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"time"
 )
 
 type EmailSender struct {
 	apiKey string
 	from   string
+	client *http.Client
 }
 
 func NewEmailSender(apiKey, from string) *EmailSender {
-	return &EmailSender{apiKey: apiKey, from: from}
+	return &EmailSender{
+		apiKey: apiKey,
+		from:   from,
+		client: &http.Client{Timeout: 10 * time.Second},
+	}
 }
 
 func (e *EmailSender) Send(to, subject, html string) error {
@@ -37,7 +43,7 @@ func (e *EmailSender) Send(to, subject, html string) error {
 	req.Header.Set("Authorization", "Bearer "+e.apiKey)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := e.client.Do(req)
 	if err != nil {
 		return err
 	}

@@ -1,9 +1,9 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
-	"math"
 	"regexp"
 	"strings"
 	"time"
@@ -50,12 +50,13 @@ func (s *InviteService) Apply(email string) error {
 		return fmt.Errorf("仅支持数字QQ邮箱（如 123456@qq.com）")
 	}
 
-	// 先获取锁，再检查邮箱状态，防止并发同邮箱绕过检查
-	lockValue := s.redis.TryLock(ApplyLockKey, LockTimeoutSeconds)
+	// 按邮箱粒度加锁，防止同一邮箱并发绕过检查
+	lockKey := ApplyLockKey + ":" + email
+	lockValue := s.redis.TryLock(lockKey, LockTimeoutSeconds)
 	if lockValue == "" {
 		return fmt.Errorf("系统繁忙，请稍后重试")
 	}
-	defer s.redis.Unlock(ApplyLockKey, lockValue)
+	defer s.redis.Unlock(lockKey, lockValue)
 
 	var claimed int64
 	s.db.Model(&LinuxdoInviteCode{}).Where("email = ?", email).Count(&claimed)
@@ -76,13 +77,25 @@ func (s *InviteService) Apply(email string) error {
 	token := randomID()
 	pendingEmail := PendingDBPrefix + token
 
-	// 乐观更新：确保 email 仍为 NULL，同时记录锁定时间用于过期释放
+	// 乐观更新：确保 email 仍为 NULL；并发冲突时重试其他码
 	now := time.Now()
-	result := s.db.Model(&LinuxdoInviteCode{}).
-		Where("id = ? AND email IS NULL", code.ID).
-		Updates(map[string]any{"email": pendingEmail, "claimed_at": now})
-	if result.RowsAffected == 0 {
-		return fmt.Errorf("系统繁忙，请稍后重试")
+	var allocated bool
+	for range 3 {
+		result := s.db.Model(&LinuxdoInviteCode{}).
+			Where("id = ? AND email IS NULL", code.ID).
+			Updates(map[string]any{"email": pendingEmail, "claimed_at": now})
+		if result.RowsAffected > 0 {
+			allocated = true
+			break
+		}
+		// 当前码已被占，重新查一条
+		code = LinuxdoInviteCode{}
+		if err := s.db.Where("email IS NULL").Order("id ASC").Limit(1).Find(&code).Error; err != nil || code.ID == 0 {
+			break
+		}
+	}
+	if !allocated {
+		return fmt.Errorf("邀请码已发完，请关注后续活动")
 	}
 
 	if err := s.redis.Set(TOKENKeyPrefix+token, email, TokenExpireMinutes*time.Minute); err != nil {
@@ -97,7 +110,14 @@ func (s *InviteService) Apply(email string) error {
 		return fmt.Errorf("系统繁忙，请稍后重试")
 	}
 
-	go s.sendInviteEmailAsync(email, token)
+	// 同步发邮件，失败则回滚 DB+Redis
+	if err := s.sendVerifyEmail(email, token); err != nil {
+		log.Printf("邀请邮件发送失败，回滚: email=%s, err=%v", email, err)
+		_ = s.redis.Del(pendingKey)
+		_ = s.redis.Del(TOKENKeyPrefix + token)
+		s.db.Model(&LinuxdoInviteCode{}).Where("id = ?", code.ID).Updates(map[string]any{"email": nil, "claimed_at": nil})
+		return fmt.Errorf("邮件发送失败，请稍后重试")
+	}
 
 	log.Printf("邀请码申请: email=%s, token=%s, codeId=%d", email, token, code.ID)
 	return nil
@@ -137,7 +157,7 @@ func (s *InviteService) Verify(token string) (string, error) {
 
 // GetRecentRecords 最近领取记录
 func (s *InviteService) GetRecentRecords(limit int) *LinuxDoInviteRecordsVO {
-	limit = int(math.Max(1, math.Min(float64(limit), 100)))
+	limit = max(1, min(limit, 100))
 
 	var records []LinuxdoInviteCode
 	s.db.Where("claimed_at IS NOT NULL AND email NOT LIKE ?", PendingDBPrefix+"%").
@@ -179,26 +199,41 @@ func (s *InviteService) GetClickCount() int64 {
 
 // UploadCodes 管理员上传邀请码（去重插入）
 func (s *InviteService) UploadCodes(codes []string) (successCount int, skipCount int, err error) {
+	// 先规范化输入
+	cleaned := make([]string, 0, len(codes))
+	seen := make(map[string]struct{}, len(codes))
+	for _, c := range codes {
+		c = strings.TrimSpace(c)
+		if c == "" {
+			continue
+		}
+		if _, ok := seen[c]; ok {
+			skipCount++
+			continue
+		}
+		seen[c] = struct{}{}
+		cleaned = append(cleaned, c)
+	}
+
+	if len(cleaned) == 0 {
+		return 0, skipCount, nil
+	}
+
 	// 查询已存在的 code
 	var existing []string
-	s.db.Model(&LinuxdoInviteCode{}).Where("code IN ?", codes).Pluck("code", &existing)
+	s.db.Model(&LinuxdoInviteCode{}).Where("code IN ?", cleaned).Pluck("code", &existing)
 	existSet := make(map[string]struct{}, len(existing))
 	for _, c := range existing {
 		existSet[c] = struct{}{}
 	}
 
 	var toInsert []LinuxdoInviteCode
-	for _, c := range codes {
-		c = strings.TrimSpace(c)
-		if c == "" {
-			continue
-		}
+	for _, c := range cleaned {
 		if _, ok := existSet[c]; ok {
 			skipCount++
 			continue
 		}
 		toInsert = append(toInsert, LinuxdoInviteCode{Code: c})
-		existSet[c] = struct{}{}
 	}
 
 	if len(toInsert) == 0 {
@@ -277,12 +312,18 @@ func (s *InviteService) GetAllCodes(page, size int) *AdminCodesVO {
 }
 
 // StartPendingReleaseWorker 启动后台轮询，定时释放过期的 pending 邀请码
-func (s *InviteService) StartPendingReleaseWorker() {
+func (s *InviteService) StartPendingReleaseWorker(ctx context.Context) {
 	ticker := time.NewTicker(5 * time.Minute)
 	go func() {
 		defer ticker.Stop()
-		for range ticker.C {
-			s.releaseExpiredPendingCodes()
+		for {
+			select {
+			case <-ctx.Done():
+				log.Println("pending 释放 worker 已停止")
+				return
+			case <-ticker.C:
+				s.releaseExpiredPendingCodes()
+			}
 		}
 	}()
 }
@@ -302,7 +343,7 @@ func (s *InviteService) releaseExpiredPendingCodes() {
 	}
 }
 
-func (s *InviteService) sendInviteEmailAsync(email, token string) {
+func (s *InviteService) sendVerifyEmail(email, token string) error {
 	verifyURL := s.config.FrontURL + "?token=" + token
 	subject := "LinuxDo 邀请码领取"
 	content := fmt.Sprintf(`<!DOCTYPE html>
@@ -349,10 +390,10 @@ body { margin: 0; padding: 0; background: #faf8f5; font-family: 'Noto Sans SC', 
 </html>`, verifyURL, TokenExpireMinutes)
 
 	if err := s.email.Send(email, subject, content); err != nil {
-		log.Printf("邀请邮件发送失败: email=%s, err=%v", email, err)
-	} else {
-		log.Printf("邀请邮件发送成功: email=%s", email)
+		return err
 	}
+	log.Printf("邀请邮件发送成功: email=%s", email)
+	return nil
 }
 
 func maskIdentifier(email *string) string {

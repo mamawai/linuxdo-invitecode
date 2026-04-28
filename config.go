@@ -52,7 +52,7 @@ func loadConfig() *Config {
 		log.Fatal("ADMIN_UPLOAD_KEY 未设置")
 	}
 	if cfg.ResendKey == "" {
-		log.Println("警告: RESEND_API_KEY 未设置，邮件发送将失败")
+		log.Fatal("RESEND_API_KEY 未设置")
 	}
 	return cfg
 }
