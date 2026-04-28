@@ -30,6 +30,7 @@ func main() {
 	r.StaticFile("/", "./static/index.html")
 	r.StaticFile("/admin", "./static/admin.html")
 	r.StaticFile("/altcha.min.js", "./static/altcha.min.js")
+	r.StaticFile("/favicon.svg", "./static/favicon.svg")
 
 	srv := &http.Server{
 		Addr:    ":" + cfg.Port,
