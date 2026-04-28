@@ -1,7 +1,9 @@
 package main
 
 import (
+	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/hex"
 	"net/http"
 	"strconv"
 	"time"
@@ -47,6 +49,11 @@ func (h *InviteHandler) Challenge(c *gin.Context) {
 		c.JSON(http.StatusOK, Fail("POW 未启用"))
 		return
 	}
+	ip := c.ClientIP()
+	if !h.redis.TokenBucketAllow("limiter:challenge:"+ip, 10.0/60.0, 10) {
+		c.JSON(http.StatusOK, Fail("请求过于频繁，请稍后再试"))
+		return
+	}
 	expires := time.Now().Add(5 * time.Minute)
 	challenge, err := altcha.CreateChallenge(altcha.ChallengeOptions{
 		HMACKey:   h.config.AltchaKey,
@@ -90,7 +97,8 @@ func (h *InviteHandler) Apply(c *gin.Context) {
 			return
 		}
 		// 防重放：同一个 challenge 解只能用一次
-		replayKey := "altcha:used:" + payload[:32]
+		sum := sha256.Sum256([]byte(payload))
+		replayKey := "altcha:used:" + hex.EncodeToString(sum[:16])
 		if h.redis.Exists(replayKey) {
 			c.JSON(http.StatusOK, Fail("验证已过期，请刷新重试"))
 			return

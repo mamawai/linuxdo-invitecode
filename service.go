@@ -50,6 +50,13 @@ func (s *InviteService) Apply(email string) error {
 		return fmt.Errorf("仅支持数字QQ邮箱（如 123456@qq.com）")
 	}
 
+	// 先获取锁，再检查邮箱状态，防止并发同邮箱绕过检查
+	lockValue := s.redis.TryLock(ApplyLockKey, LockTimeoutSeconds)
+	if lockValue == "" {
+		return fmt.Errorf("系统繁忙，请稍后重试")
+	}
+	defer s.redis.Unlock(ApplyLockKey, lockValue)
+
 	var claimed int64
 	s.db.Model(&LinuxdoInviteCode{}).Where("email = ?", email).Count(&claimed)
 	if claimed > 0 {
@@ -60,12 +67,6 @@ func (s *InviteService) Apply(email string) error {
 	if s.redis.Exists(pendingKey) {
 		return fmt.Errorf("您已申请过，请查收邮件")
 	}
-
-	lockValue := s.redis.TryLock(ApplyLockKey, LockTimeoutSeconds)
-	if lockValue == "" {
-		return fmt.Errorf("系统繁忙，请稍后重试")
-	}
-	defer s.redis.Unlock(ApplyLockKey, lockValue)
 
 	var code LinuxdoInviteCode
 	if err := s.db.Where("email IS NULL").Order("id ASC").Limit(1).Find(&code).Error; err != nil || code.ID == 0 {
