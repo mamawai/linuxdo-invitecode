@@ -1,4 +1,4 @@
-module wiib-invite-go
+module linuxdo-invitecode
 
 go 1.23
 

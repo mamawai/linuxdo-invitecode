@@ -52,8 +52,8 @@ go run .
 ### 5. Docker
 
 ```bash
-docker build -t linuxdo-invite .
-docker run -d --env-file .env -p 7386:7386 linuxdo-invite
+docker build -t linuxdo-invitecode .
+docker run -d --env-file .env -p 7386:7386 linuxdo-invitecode
 ```
 
 ## 管理员操作

@@ -2,7 +2,7 @@
 .env
 
 # Binary
-wiib-invite-go
+linuxdo-invitecode
 *.exe
 
 # IDE
