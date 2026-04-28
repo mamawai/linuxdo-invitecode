@@ -1,0 +1,14 @@
+# Environment variables
+.env
+
+# Binary
+wiib-invite-go
+*.exe
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
